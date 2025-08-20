@@ -1,2 +1,2 @@
-# billie.github.io
-BILLIE RAID GAME
+# finnsimulator.github.io
+FINN SIMULATOR
