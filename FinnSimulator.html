@@ -1,0 +1,183 @@
+<!DOCTYPE html> 
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Evil PNG Overlay</title>
+<style>
+  body { 
+    display:flex; 
+    flex-direction:column; 
+    align-items:center; 
+    background: rgba(0, 0, 50, 0.7); /* dark blue with transparency */
+    color:white; 
+    font-family:sans-serif; 
+  }
+  canvas { 
+    border:1px solid #555; 
+    margin-top:10px; 
+    cursor:pointer; 
+    max-width: 100%; 
+    height: auto; 
+    background: black; /* black background for image box */
+  }
+  img.logo {
+    max-width: 400px; /* 2x bigger */
+    margin: 10px 0;
+  }
+</style>
+<script src="https://cdn.jsdelivr.net/npm/@vladmandic/face-api/dist/face-api.min.js"></script>
+</head>
+<body>
+<!-- Logo -->
+<img src="https://i.postimg.cc/15F8y1xQ/finnsimulator.png" alt="Logo" class="logo">
+
+<h2>Upload your image</h2>
+<input type="file" id="imgUpload" accept="image/*">
+<canvas id="canvas"></canvas>
+
+<script>
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+let img = new Image();
+
+// Overlay PNG
+const overlayImg = new Image();
+overlayImg.src = "https://i.postimg.cc/nzTLwnQ4/Gyc-Bc-LLas-AAr-MJZ.png";
+
+// Overlay object
+let Overlay = { x: 50, y: 50, w: 80, h: 80, rotation: 0, dragging:false, resizing:false, rotating:false };
+
+// Load FaceAPI
+async function loadModels() {
+  await faceapi.nets.tinyFaceDetector.loadFromUri('https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model/');
+}
+loadModels();
+
+// Resize image to fit canvas
+function fitImageToCanvas(img) {
+  const maxWidth = window.innerWidth * 0.9;
+  const maxHeight = window.innerHeight * 0.6;
+  const scale = Math.min(maxWidth / img.width, maxHeight / img.height, 1);
+  return { width: img.width * scale, height: img.height * scale };
+}
+
+// Upload image
+document.getElementById('imgUpload').addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  img.src = URL.createObjectURL(file);
+  img.onload = async () => {
+    const size = fitImageToCanvas(img);
+    canvas.width = size.width;
+    canvas.height = size.height;
+    drawCanvas();
+
+    const detections = await faceapi.detectAllFaces(img, new faceapi.TinyFaceDetectorOptions({ inputSize: 512, scoreThreshold: 0.3 }));
+    if (detections.length) {
+      const det = detections[0].box;
+      const scaleX = canvas.width / img.width;
+      const scaleY = canvas.height / img.height;
+      Overlay.x = det.x * scaleX;
+      Overlay.y = det.y * scaleY;
+      Overlay.w = det.width * scaleX;
+      Overlay.h = det.height * scaleY;
+    } else {
+      Overlay.x = canvas.width/2 - 40;
+      Overlay.y = canvas.height/2 - 40;
+      Overlay.w = 80;
+      Overlay.h = 80;
+    }
+    drawCanvas();
+  };
+});
+
+// Draw canvas and overlay PNG
+function drawCanvas() {
+  ctx.clearRect(0,0,canvas.width, canvas.height);
+
+  // Fill canvas background black before drawing image
+  ctx.fillStyle = 'black';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+  // Draw overlay PNG
+  ctx.save();
+  ctx.translate(Overlay.x + Overlay.w/2, Overlay.y + Overlay.h/2);
+  ctx.rotate(Overlay.rotation);
+  ctx.drawImage(overlayImg, -Overlay.w/2, -Overlay.h/2, Overlay.w, Overlay.h);
+  ctx.restore();
+}
+
+// Helper to check if mouse is inside overlay
+function isInsideOverlay(x, y) {
+  const cx = Overlay.x + Overlay.w/2;
+  const cy = Overlay.y + Overlay.h/2;
+  const dx = x - cx;
+  const dy = y - cy;
+  const hWidth = Overlay.w/2;
+  const hHeight = Overlay.h/2;
+  return dx > -hWidth && dx < hWidth && dy > -hHeight && dy < hHeight;
+}
+
+// Rotation handle hitbox
+function isOnRotationHandle(x, y) {
+  const cx = Overlay.x + Overlay.w/2;
+  const cy = Overlay.y - 20; 
+  const dx = x - cx;
+  const dy = y - cy;
+  return dx*dx + dy*dy < 10*10;
+}
+
+// Mouse events
+let lastX, lastY;
+canvas.addEventListener('mousedown', e => {
+  const mx = e.offsetX, my = e.offsetY;
+  if (isOnRotationHandle(mx, my)) {
+    Overlay.rotating = true;
+  } else if (isInsideOverlay(mx,my)) {
+    Overlay.dragging = true;
+  } else {
+    Overlay.resizing = true;
+    Overlay.x = mx;
+    Overlay.y = my;
+    Overlay.w = 40;
+    Overlay.h = 40;
+  }
+  lastX = mx;
+  lastY = my;
+});
+
+canvas.addEventListener('mousemove', e => {
+  const mx = e.offsetX, my = e.offsetY;
+  const dx = mx - lastX;
+  const dy = my - lastY;
+  if (Overlay.dragging) {
+    Overlay.x += dx;
+    Overlay.y += dy;
+  } else if (Overlay.resizing) {
+    Overlay.w += dx;
+    Overlay.h += dy;
+  } else if (Overlay.rotating) {
+    const cx = Overlay.x + Overlay.w/2;
+    const cy = Overlay.y + Overlay.h/2;
+    Overlay.rotation = Math.atan2(my - cy, mx - cx) - Math.atan2(0, 1);
+  }
+  lastX = mx;
+  lastY = my;
+  drawCanvas();
+});
+
+canvas.addEventListener('mouseup', e => {
+  Overlay.dragging = false;
+  Overlay.resizing = false;
+  Overlay.rotating = false;
+});
+canvas.addEventListener('mouseleave', e => {
+  Overlay.dragging = false;
+  Overlay.resizing = false;
+  Overlay.rotating = false;
+});
+</script>
+</body>
+</html>
